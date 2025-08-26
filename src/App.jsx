@@ -531,10 +531,6 @@ export default function UltimateRGBApp() {
                   </div>
                 ))}
               </div>
-
-              <div className="mt-6 text-xs text-zinc-400">
-                Нажмите на цвет, чтобы выбрать его в палитре.
-              </div>
             </div>
           </div>
         </motion.section>
@@ -544,9 +540,6 @@ export default function UltimateRGBApp() {
       <footer className="relative z-10 border-t border-white/10 bg-zinc-950/60 backdrop-blur">
         <div className="mx-auto max-w-6xl px-4 py-6 flex flex-col md:flex-row items-center justify-between gap-3">
           <p className="text-xs text-zinc-400">© {new Date().getFullYear()} Ultimate RGB — Создано с любовью к цвету.</p>
-          <div className="text-xs text-zinc-500">
-            Подсказка: кликайте по градиенту, двигайте ползунок оттенка и прозрачности.
-          </div>
         </div>
       </footer>
 

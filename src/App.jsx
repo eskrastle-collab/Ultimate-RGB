@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { Copy, Check, Droplets, Plus, Trash2, Newspaper } from "lucide-react";
+import { Copy, Check, Droplets, Plus, Trash2 } from "lucide-react";
 
 // --- Utilities ---
 function clamp(n, min, max) {
@@ -119,6 +119,37 @@ function useCopyToClipboard(text) {
     }
   }, [text]);
   return { copied, copy };
+}
+
+// --- Odometer ---
+function Odometer({ value, charset = "0123456789", className = "" }) {
+  const s = String(value ?? "").toUpperCase();
+  const chars = s.split("");
+  const set = charset;
+  return (
+    <span className={`odometer ${className}`} aria-label={s}>
+      {chars.map((ch, i) => {
+        if (!set.includes(ch)) {
+          // non-animated char
+          return (
+            <span className="odometer-col" key={i}>
+              <span className="odometer-cell">{ch}</span>
+            </span>
+          );
+        }
+        const idx = set.indexOf(ch);
+        return (
+          <span className="odometer-col" key={i}>
+            <span className="odometer-reel" style={{ transform: `translateY(-${idx}em)` }}>
+              {set.split("").map((c, j) => (
+                <span className="odometer-cell" key={j}>{c}</span>
+              ))}
+            </span>
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 // --- Components ---
@@ -257,21 +288,21 @@ export default function UltimateRGBApp() {
         <div className="mx-auto max-w-6xl px-4 py-6 flex items-center justify-between">
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
             className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-emerald-500 shadow-lg animate-spin-slow" />
+            {/* Removed spinning square */}
             <div>
               <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Ultimate RGB</h1>
               <p className="text-xs md:text-sm text-zinc-400">Выбор цвета</p>
             </div>
           </motion.div>
 
-          {/* Redesigned news button (top-right) */}
+          {/* News button (icon removed) */}
           <a
             href="https://t.me/StocksiUltimate_bot?start=r61558uUltimateRGB"
             target="_blank" rel="noreferrer"
             className="relative group select-none">
             <span className="sr-only">Сервис оперативных новостей STOCKSI Ultimate</span>
 
-            {/* Animated conic aura */}
+            {/* Static conic aura (no rotation) */}
             <div className="absolute -inset-[2px] rounded-full opacity-60 blur-md pointer-events-none"
                  style={{
                    background: "conic-gradient(from 0deg, rgba(167,139,250,.5), rgba(99,102,241,.5), rgba(16,185,129,.5), rgba(236,72,153,.5), rgba(167,139,250,.5))"
@@ -281,15 +312,15 @@ export default function UltimateRGBApp() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.99 }}
               className="relative px-4 py-2 rounded-full text-xs md:text-sm font-semibold bg-zinc-900/70 backdrop-blur border border-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.25)] overflow-hidden">
-              <span className="inline-flex items-center gap-2">
-                <Newspaper className="h-4 w-4" />
+              <span className="inline-flex items-center">
                 Сервис оперативных новостей STOCKSI Ultimate
               </span>
               {/* Shimmer sweep */}
               <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
                 <i className="absolute -left-1/3 top-0 h-full w-1/3" style={{
                   background: "linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent)",
-                  transform: "skewX(-20deg)"
+                  transform: "skewX(-20deg)",
+                  animation: "shimmer 2.4s ease-in-out infinite"
                 }} />
               </span>
               {/* Pulse dot */}
@@ -325,20 +356,24 @@ export default function UltimateRGBApp() {
                 {/* Readouts */}
                 <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="relative h-12 w-12 rounded-xl border border-white/10 shadow-inner overflow-hidden"
+                    <div className="relative h-14 w-14 md:h-16 md:w-16 rounded-xl border border-white/10 shadow-inner overflow-hidden"
                          title="Предпросмотр c учётом альфы">
                       <div className="absolute inset-0" style={{ background: 'repeating-conic-gradient(rgba(255,255,255,0.08) 0 25%, transparent 0 50%) 0 0 / 12px 12px' }} />
                       <div className="absolute inset-0" style={{ backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha})` }} />
                     </div>
                     <div className="flex-1">
                       <label className="text-xs text-zinc-400">HEX {alpha < 1 ? "(с альфой)" : ""}</label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          className="w-40 md:w-48 bg-transparent border border-white/10 rounded-lg px-3 py-2 font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
-                          value={hexInput}
-                          onChange={(e) => onHexChange(e.target.value)}
-                          spellCheck={false}
-                        />
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="relative w-40 md:w-48">
+  <input
+    aria-label="HEX"
+    className="w-full bg-transparent border border-white/10 rounded-lg px-3 py-2 font-mono tracking-wider text-transparent caret-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+    value={hexInput}
+    onChange={(e) => onHexChange(e.target.value)}
+    spellCheck={false}
+  />
+  <Odometer value={hexInput.toUpperCase()} charset="#0123456789ABCDEF" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono tracking-wider text-sm md:text-base text-zinc-300" />
+</div>
                         <button
                           onClick={copy}
                           className="relative px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition shadow"
@@ -364,15 +399,15 @@ export default function UltimateRGBApp() {
                   <div className="grid grid-cols-3 gap-3 text-sm">
                     <div>
                       <p className="text-xs text-zinc-400">RGB</p>
-                      <p className="font-mono">{r}, {g}, {b}</p>
+                      <Odometer value={`${r}, ${g}, ${b}`} charset={"0123456789, "} className="font-mono" />
                     </div>
                     <div>
                       <p className="text-xs text-zinc-400">HSV</p>
-                      <p className="font-mono">{Math.round(h)}, {Math.round(s*100)}%, {Math.round(v*100)}%</p>
+                      <Odometer value={`${Math.round(h)}, ${Math.round(s*100)}%, ${Math.round(v*100)}%`} charset={"0123456789, %"} className="font-mono" />
                     </div>
                     <div>
                       <p className="text-xs text-zinc-400">Alpha</p>
-                      <p className="font-mono">{Math.round(alpha*100)}%</p>
+                      <Odometer value={`${Math.round(alpha*100)}%`} charset={"0123456789%"} className="font-mono" />
                     </div>
                   </div>
                 </div>
@@ -464,9 +499,11 @@ export default function UltimateRGBApp() {
       <style>{`
         @keyframes glowPulse { 0%,100%{opacity:.6} 50%{opacity:1} }
         .animate-glow { animation: glowPulse 2.4s ease-in-out infinite; }
-        @keyframes spin-slow { from{transform:rotate(0)} to{transform:rotate(360deg)} }
-        .animate-spin-slow { animation: spin-slow 12s linear infinite; }
-        @keyframes spin-slower { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+        /* Odometer */
+        .odometer { display:inline-flex; gap: .02em; }
+        .odometer-col { display:inline-block; height:1em; overflow:hidden; }
+        .odometer-reel { display:block; transition: transform 500ms cubic-bezier(.2,.8,.2,1); will-change: transform; }
+        .odometer-cell { display:block; height:1em; line-height:1em; }
         @keyframes shimmer { 0% { transform: translateX(-120%) skewX(-20deg); } 100% { transform: translateX(220%) skewX(-20deg); } }
       `}</style>
     </div>

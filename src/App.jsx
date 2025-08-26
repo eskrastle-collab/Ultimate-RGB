@@ -152,6 +152,58 @@ function Odometer({ value, charset = "0123456789", className = "" }) {
   );
 }
 
+// --- Parallax Background (mouse move with smooth inertia) ---
+function ParallaxBackground() {
+  const l1 = useRef(null);
+  const l2 = useRef(null);
+  const l3 = useRef(null);
+  const target = useRef({ x: 0, y: 0 });
+  const current = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const onMove = (e) => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      target.current.x = (e.clientX - w / 2) / (w / 2);
+      target.current.y = (e.clientY - h / 2) / (h / 2);
+    };
+    window.addEventListener("mousemove", onMove);
+    let raf;
+    const tick = () => {
+      // Smooth follow
+      current.current.x += (target.current.x - current.current.x) * 0.08;
+      current.current.y += (target.current.y - current.current.y) * 0.08;
+      const apply = (ref, depthX, depthY = depthX) => {
+        if (!ref.current) return;
+        ref.current.style.transform = `translate3d(${current.current.x * depthX}px, ${current.current.y * depthY}px, 0)`;
+      };
+      apply(l1, -20, -10);
+      apply(l2, 30, 15);
+      apply(l3, -12, 20);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("mousemove", onMove);
+    };
+  }, []);
+
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* Subtle grid */}
+      <div className="absolute inset-0 opacity-[.06]" style={{ backgroundImage: `linear-gradient(0deg, rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)`, backgroundSize: "40px 40px" }} />
+      {/* Blobs */}
+      <div ref={l1} className="absolute -top-36 -left-28 w-[60vmax] h-[60vmax] rounded-[50%] blur-3xl opacity-35"
+           style={{ background: "radial-gradient(circle at 30% 30%, rgba(167,139,250,0.55), transparent 60%)" }} />
+      <div ref={l2} className="absolute -top-24 -right-24 w-[55vmax] h-[55vmax] rounded-[50%] blur-3xl opacity-35"
+           style={{ background: "radial-gradient(circle at 70% 30%, rgba(236,72,153,0.5), transparent 60%)" }} />
+      <div ref={l3} className="absolute -bottom-40 left-1/2 -translate-x-1/2 w-[65vmax] h-[65vmax] rounded-[50%] blur-3xl opacity-30"
+           style={{ background: "radial-gradient(circle at 50% 70%, rgba(16,185,129,0.5), transparent 60%)" }} />
+    </div>
+  );
+}
+
 // --- Components ---
 function HueSlider({ h, onChange }) {
   const ref = useRef(null);
@@ -173,7 +225,7 @@ function HueSlider({ h, onChange }) {
   };
 
   return (
-    <div className="relative h-72 w-5 rounded-xl overflow-hidden shadow-inner" ref={ref}
+    <div className="relative h-56 md:h-72 w-5 touch-none rounded-xl overflow-hidden shadow-inner" ref={ref}
          onPointerDown={onPointerDown} onPointerMove={onPointerMove}
          aria-label="Hue slider" role="slider" aria-valuemin={0} aria-valuemax={360} aria-valuenow={Math.round(h)}>
       {/* Hue gradient */}
@@ -217,7 +269,7 @@ function SVPanel({ h, s, v, onChange }) {
   const y = (1 - v) * 100;
 
   return (
-    <div className="relative w-full h-72 rounded-2xl overflow-hidden cursor-crosshair shadow-inner" ref={ref}
+    <div className="relative w-full h-56 md:h-72 touch-none rounded-2xl overflow-hidden cursor-crosshair shadow-inner" ref={ref}
          onPointerDown={onPointerDown} onPointerMove={onPointerMove} aria-label="Saturation/Value panel">
       <div className="absolute inset-0" style={{ background: `linear-gradient(to right, #fff, ${base})` }} />
       <div className="absolute inset-0" style={{ background: `linear-gradient(to top, #000, transparent)` }} />
@@ -282,7 +334,10 @@ export default function UltimateRGBApp() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-50 relative overflow-hidden">
-      <FancyGlow />
+      {/* New parallax background */}
+      <ParallaxBackground />
+      {/* Optional extra glow: <FancyGlow /> */}
+
       {/* Header */}
       <header className="relative z-20">
         <div className="mx-auto max-w-6xl px-4 py-6 flex items-center justify-between">
@@ -344,7 +399,7 @@ export default function UltimateRGBApp() {
               <div className="relative rounded-3xl p-6 bg-zinc-900/60 backdrop-blur border border-white/10 shadow-xl overflow-hidden">
                 <div className="absolute -inset-px rounded-3xl bg-gradient-to-tr from-white/10 to-transparent pointer-events-none" />
 
-                <div className="flex flex-col md:flex-row gap-6">
+                <div className="grid grid-cols-[1fr_auto] items-stretch gap-4">
                   <div className="flex-1">
                     <SVPanel h={h} s={s} v={v} onChange={(nv) => setHsv((p) => ({ ...p, ...nv }))} />
                   </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import { Check, Copy, Plus, Droplet, Palette, ArrowUpRight } from "lucide-react";
 
 // ---- Document head: title, meta, icons (as early as possible) ----
@@ -226,6 +226,166 @@ function BackgroundFX({ h, s, v, a }) {
   );
 }
 
+// Свечение курсора — мягкий «ореол», реагирует на выбранный цвет
+function CursorGlow({ rgb, a }) {
+  const enabled = typeof window !== 'undefined' && window.matchMedia ? !window.matchMedia('(prefers-reduced-motion: reduce)').matches : true;
+  const size = 640; // БОЛЬШЕе свечение
+  const x = useMotionValue(-size);
+  const y = useMotionValue(-size);
+
+  // Мгновенное следование за курсором — без пружины
+  useEffect(() => {
+    if (!enabled) return;
+    const move = (e) => {
+      x.set(e.clientX - size / 2);
+      y.set(e.clientY - size / 2);
+    };
+    window.addEventListener('pointermove', move);
+    return () => window.removeEventListener('pointermove', move);
+  }, [enabled, x, y]);
+
+  const glowAlpha = Math.min(0.28, 0.12 + a * 0.22);
+  const inner = `radial-gradient(closest-side, rgba(${rgb.r},${rgb.g},${rgb.b},${glowAlpha}), rgba(${rgb.r},${rgb.g},${rgb.b},0) 70%)`;
+  const ring = `radial-gradient(closest-side, rgba(255,255,255,0.12), rgba(255,255,255,0.0) 60%)`;
+
+  return (
+    <motion.div
+      aria-hidden="true"
+      className="pointer-events-none fixed z-[25] mix-blend-screen"
+      style={{ width: size, height: size, left: 0, top: 0, x, y, filter: 'blur(32px)' }}
+    >
+      <div className="w-full h-full rounded-full" style={{ background: inner }} />
+      <div className="absolute inset-0 rounded-full" style={{ background: ring, filter: 'blur(10px)' }} />
+    </motion.div>
+  );
+}
+
+// Шарик-курсор — оставлен на будущее (сейчас рендер не включён)
+function CursorBall({ colorCss, size = 14 }) {
+  const x = useMotionValue(-size);
+  const y = useMotionValue(-size);
+  useEffect(() => {
+    const move = (e) => {
+      x.set(e.clientX - size / 2);
+      y.set(e.clientY - size / 2);
+    };
+    window.addEventListener('pointermove', move);
+    return () => window.removeEventListener('pointermove', move);
+  }, [size, x, y]);
+
+  const glossy = `radial-gradient(80% 80% at 32% 28%, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.35) 18%, rgba(255,255,255,0.08) 32%, rgba(255,255,255,0.0) 42%)`;
+  const shade  = `radial-gradient(120% 120% at 70% 78%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.0) 60%)`;
+  const color  = `linear-gradient(145deg, ${colorCss}, rgba(0,0,0,0.25))`;
+
+  return (
+    <motion.div aria-hidden="true" className="pointer-events-none fixed z-[50]" style={{ left: 0, top: 0, x, y, width: size, height: size }}>
+      <div className="w-full h-full rounded-full relative" style={{
+        background: `${glossy}, ${shade}, ${color}`,
+        boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.5), inset 0 -3px 8px rgba(0,0,0,0.6), 0 10px 24px rgba(0,0,0,0.45)'
+      }}>
+        <div className="absolute inset-[-1px] rounded-full" style={{ boxShadow: '0 0 0 1px rgba(255,255,255,0.18), 0 0 12px rgba(255,255,255,0.08)' }} />
+        <div className="absolute inset-0 rounded-full" style={{ background: 'radial-gradient(60% 24% at 35% 28%, rgba(255,255,255,0.5), rgba(255,255,255,0) 60%)', mixBlendMode: 'screen', opacity: 0.7 }} />
+      </div>
+    </motion.div>
+  );
+}
+
+// Искры/брызги при движении курсора (замедленные)
+function CursorSparks({ rgb, a }) {
+  const ref = useRef(null);
+  const enabled = typeof window !== 'undefined' && window.matchMedia ? !window.matchMedia('(prefers-reduced-motion: reduce)').matches : true;
+
+  useEffect(() => {
+    if (!enabled) return;
+    const container = ref.current;
+    if (!container) return;
+
+    const onMove = (e) => {
+      const count = 3; // сколько искр на событие
+      for (let i = 0; i < count; i++) {
+        const el = document.createElement('span');
+        const size = Math.round(2 + Math.random() * 3);
+        el.style.position = 'fixed';
+        el.style.left = (e.clientX + (Math.random() - 0.5) * 8) + 'px';
+        el.style.top = (e.clientY + (Math.random() - 0.5) * 8) + 'px';
+        el.style.width = size + 'px';
+        el.style.height = size + 'px';
+        el.style.borderRadius = '9999px';
+        el.style.pointerEvents = 'none';
+        el.style.willChange = 'transform, opacity';
+        el.style.zIndex = 26;
+        const alpha = Math.min(0.9, 0.45 + a * 0.5);
+        el.style.background = `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`;
+        el.style.boxShadow = '0 0 8px rgba(255,255,255,0.15)';
+        container.appendChild(el);
+
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 30 + Math.random() * 70;
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist;
+        const duration = 1000 + Math.random() * 900;
+
+        el.animate([
+          { transform: 'translate(0,0) scale(1)', opacity: 1 },
+          { transform: `translate(${dx}px, ${dy}px) scale(${0.6 + Math.random() * 0.4})`, opacity: 0 }
+        ], { duration, easing: 'cubic-bezier(.2,.6,.2,1)', fill: 'forwards' });
+
+        setTimeout(() => el.remove(), duration + 60);
+      }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    return () => window.removeEventListener('pointermove', onMove);
+  }, [enabled, rgb.r, rgb.g, rgb.b, a]);
+
+  return <div ref={ref} className="pointer-events-none fixed inset-0 z-[26] mix-blend-screen" />;
+}
+
+
+// Кнопка-CTA «Сервис моментальных новостей» с периодической анимацией
+function NewsCTA({ accent = 'rgba(99,102,241,0.35)' }) {
+  return (
+    <motion.a
+      href="https://t.me/StocksiUltimate_bot?start=r61558uUltimateRGB"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="relative inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium text-white border border-white/10 shadow transition-all bg-[#1d1d1d]/90 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.15),0_10px_28px_rgba(0,0,0,0.5)] overflow-hidden"
+      whileHover={{ scale: 1.02 }}
+      whileTap={{ scale: 0.995 }}
+      style={{ backdropFilter: 'blur(6px)' }}
+      aria-label="Сервис моментальных новостей"
+    >
+      {/* Мягкое свечение вокруг кнопки (пульс) */}
+      <motion.span
+        aria-hidden
+        className="absolute -inset-[2px] rounded-full -z-10"
+        style={{ background: `radial-gradient(60% 120% at 20% 50%, ${accent}, transparent 70%)` }}
+        animate={{ opacity: [0.25, 0.6, 0.25] }}
+        transition={{ duration: 2.8, repeat: Infinity, repeatDelay: 1.8 }}
+      />
+
+      {/* Блик, который иногда пробегает слева направо */}
+      <motion.span
+        aria-hidden
+        className="pointer-events-none absolute top-0 bottom-0 left-[-30%] w-[60%] rounded-full"
+        initial={{ x: 0 }}
+        animate={{ x: ['0%', '200%'] }}
+        transition={{ duration: 1.15, ease: 'easeInOut', repeat: Infinity, repeatDelay: 3.4 }}
+        style={{ background: 'linear-gradient(115deg, transparent 20%, rgba(255,255,255,0.18) 50%, transparent 80%)', mixBlendMode: 'overlay', filter: 'blur(1.5px)' }}
+      />
+
+      {/* Маленький индикатор-«пинг» */}
+      <span className="relative flex h-2 w-2">
+        <span className="absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75 animate-ping"></span>
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-400"></span>
+      </span>
+
+      <span className="whitespace-nowrap">Сервис моментальных новостей</span>
+      <ArrowUpRight className="h-4 w-4" />
+    </motion.a>
+  );
+}
+
 // ---------- Основной компонент ----------
 export default function UltimateRGB() {
   // Только тёмная тема
@@ -241,6 +401,10 @@ export default function UltimateRGB() {
   const [s, setS] = useState(0.6); // 0..1
   const [v, setV] = useState(0.8); // 0..1
   const [a, setA] = useState(1); // 0..1
+
+  // Состояние наведения внутри SV-поля (для цвета шарика)
+  const [svHovering, setSvHovering] = useState(false);
+  const [svHoverColor, setSvHoverColor] = useState("");
 
   const [hexInput, setHexInput] = useState("");
   const [hexError, setHexError] = useState("");
@@ -392,6 +556,19 @@ export default function UltimateRGB() {
     window.addEventListener("pointerup", up);
   }
 
+  // Наведение внутри SV-поля: вычисляем цвет под курсором
+  function onSvPointerMove(e) {
+    const el = svRef.current; if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+    const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+    const c = hsvToRgb(h, x, 1 - y);
+    setSvHoverColor(`rgba(${c.r}, ${c.g}, ${c.b}, ${Math.max(0.6, Math.min(1, a)).toFixed(2)})`);
+    setSvHovering(true);
+  }
+  function onSvPointerEnter() { setSvHovering(true); }
+  function onSvPointerLeave() { setSvHovering(false); }
+
   const hueGradient = {
     background:
       "linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%)",
@@ -445,25 +622,20 @@ export default function UltimateRGB() {
   }, [h, s, v]);
 
   return (
-    <div className={"relative dark min-h-screen w-full bg-[#232323] text-zinc-100 selection:bg-zinc-100 selection:text-zinc-900"}>
+    <div className={"relative dark min-h-screen w-full  bg-[#232323] text-zinc-100 selection:bg-zinc-100 selection:text-zinc-900"}>
       <BackgroundFX h={h} s={s} v={v} a={a} />
+      <CursorSparks rgb={rgb} a={a} />
+
       {/* Шапка */}
-      <motion.header className="relative z-30 sticky top-0 backdrop-blur border-b border-zinc-800/60 bg-[#232323]/80"
-      >
+      <motion.header className="relative z-30 sticky top-0 backdrop-blur border-b border-zinc-800/60 bg-[#232323]/80">
         <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">              <h1 className="text-xl font-semibold tracking-tight">Ultimate RGB</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-semibold tracking-tight">Ultimate RGB</h1>
               <span className="text-zinc-400 hidden sm:inline">— HEX + Прозрачность</span>
             </div>
           </div>
-          <a
-            href="https://t.me/StocksiUltimate_bot?start=r61558uUltimateRGB"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs sm:text-sm text-zinc-300 hover:underline inline-flex items-center gap-1"
-          >
-            Сервис моментальных новостей <ArrowUpRight className="h-3.5 w-3.5" />
-          </a>
+          <NewsCTA accent={css} />
         </div>
       </motion.header>
 
@@ -478,7 +650,10 @@ export default function UltimateRGB() {
               <div
                 ref={svRef}
                 onPointerDown={onSvPointerDown}
-                className="relative h-72 w-full rounded-2xl overflow-hidden cursor-crosshair shadow-sm"
+                onPointerMove={onSvPointerMove}
+                onPointerEnter={onSvPointerEnter}
+                onPointerLeave={onSvPointerLeave}
+                className="relative h-72 w-full rounded-2xl overflow-hidden  shadow-sm"
                 style={svBg}
               >
                 <div className="absolute inset-0" style={{ background: "linear-gradient(to right, #fff, rgba(255,255,255,0))" }} />
@@ -495,12 +670,13 @@ export default function UltimateRGB() {
                   <OdometerText value={`${h}°`} className="tabular-nums text-zinc-400" />
                 </div>
                 <div
-                  className="relative h-4 rounded-full shadow-inner overflow-hidden cursor-ew-resize"
+                  className="relative h-4 rounded-full shadow-inner overflow-hidden "
                   ref={hueRef}
                   onPointerDown={onHuePointerDown}
                   style={hueGradient}
                 >
-                  <div className="absolute top-1/2 -translate-y-1/2 h-6 w-6 -ml-3 rounded-full ring-2 ring-white shadow" style={{ left: huePointer.left, background: `hsl(${h} 100% 50%)` }} />
+                  <div className="absolute inset-y-0 -ml-[1px] w-[2px] rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.25)]" style={{ left: huePointer.left }} />
+                  <div className="absolute inset-y-[-8px] -ml-[2px] w-[4px] rounded-full bg-white/30 blur-sm" style={{ left: huePointer.left }} />
                 </div>
               </div>
               <div className="space-y-2">
@@ -508,9 +684,10 @@ export default function UltimateRGB() {
                   <span className="font-medium text-zinc-300">Прозрачность (Alpha)</span>
                   <OdometerText value={`${Math.round(a * 100)}%`} className="tabular-nums text-zinc-400" />
                 </div>
-                <Checkerboard dark={isDark} className="relative h-4 rounded-full overflow-hidden cursor-ew-resize shadow-inner">
+                <Checkerboard dark={isDark} className="relative h-4 rounded-full overflow-hidden  shadow-inner">
                   <div ref={alphaRef} onPointerDown={onAlphaPointerDown} className="absolute inset-0" style={alphaGradient} />
-                  <div className="absolute top-1/2 -translate-y-1/2 h-6 w-6 -ml-3 rounded-full ring-2 ring-white shadow" style={{ left: alphaPointer.left, background: css }} />
+                  <div className="absolute inset-y-0 -ml-[1px] w-[2px] rounded-full bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.25)]" style={{ left: alphaPointer.left }} />
+                  <div className="absolute inset-y-[-8px] -ml-[2px] w-[4px] rounded-full opacity-70 blur-sm" style={{ left: alphaPointer.left, background: css }} />
                 </Checkerboard>
               </div>
             </div>
@@ -527,7 +704,7 @@ export default function UltimateRGB() {
                 return (
                   <button
                     key={i}
-                    className="group relative h-8 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-600"
+                    className="group  relative h-8 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-600"
                     style={{ background: hex }}
                     onClick={() => useSwatch(hex)}
                     title={t}
@@ -547,7 +724,7 @@ export default function UltimateRGB() {
         <motion.aside initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
           {/* Предпросмотр */}
           <div className="grid gap-4">
-            <div className="text-sm font-medium text-zinc-300">Предпросмотр</div>
+            <div className="text-sm font-medium text-зinc-300">Предпросмотр</div>
             <div className="grid grid-cols-2 gap-4">
               <Checkerboard dark={isDark} className="h-28 w-full p-2">
                 <div className="h-full w-full rounded-xl shadow-inner" style={{ background: css }} />
@@ -572,12 +749,12 @@ export default function UltimateRGB() {
                   onChange={(e) => onHexChange(e.target.value)}
                   onFocus={() => setHexFocused(true)}
                   onBlur={() => setHexFocused(false)}
-                  className={`w-full rounded-xl bg-transparent px-3 py-2 outline-none font-mono text-sm tracking-wider ${hexError ? "text-rose-600" : ""}`}
+                  className={`w-full rounded-xl bg-transparent px-3 py-2 outline-none font-mono text-sm tracking-wider  ${hexError ? "text-rose-600" : ""}`}
                   placeholder="#RRGGBB или #RRGGBBAA"
                 />
                 <button
                   onClick={() => copy("#" + hex8, "hex")}
-                  className="px-3 py-2 text-zinc-300 hover:text-white transition-colors"
+                  className=" px-3 py-2 text-zinc-300 hover:text-white transition-colors"
                   title="Скопировать HEX (8 знаков)"
                 >
                   {copied === "hex" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -589,13 +766,13 @@ export default function UltimateRGB() {
             <div className="grid grid-cols-1 gap-3">
               <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-[#1f1f1f] px-3 py-2">
                 <OdometerText value={`rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, ${a.toFixed(3)})`} className="font-mono text-sm" />
-                <button onClick={() => copy(css, "rgba")} className="text-zinc-300 hover:text-white" title="Скопировать RGBA">
+                <button onClick={() => copy(css, "rgba")} className=" text-zinc-300 hover:text-white" title="Скопировать RGBA">
                   {copied === "rgba" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </button>
               </div>
               <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-[#1f1f1f] px-3 py-2">
                 <OdometerText value={`--color: #${hex6}; --alpha: ${Math.round(a * 100)}%;`} className="font-mono text-sm" />
-                <button onClick={() => copy(`--color: #${hex6}; --alpha: ${Math.round(a * 100)}%;`, "cssvar")} className="text-zinc-300 hover:text-white" title="Скопировать CSS-переменные">
+                <button onClick={() => copy(`--color: #${hex6}; --alpha: ${Math.round(a * 100)}%;`, "cssvar")} className=" text-zinc-300 hover:text-white" title="Скопировать CSS-переменные">
                   {copied === "cssvar" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </button>
               </div>
@@ -608,7 +785,7 @@ export default function UltimateRGB() {
               <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
                 <Palette className="h-4 w-4" /> Моя палитра
               </div>
-              <button onClick={addToPalette} className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 text-white px-3 py-2 text-sm hover:brightness-110 active:scale-[.99] transition-all shadow">
+              <button onClick={addToPalette} className=" inline-flex items-center gap-2 rounded-xl bg-зinc-900 text-white px-3 py-2 text-sm hover:brightness-110 active:scale-[.99] transition-all shadow">
                 <Plus className="h-4 w-4" /> Добавить
               </button>
             </div>
@@ -617,7 +794,7 @@ export default function UltimateRGB() {
                 <button
                   key={i}
                   onClick={() => useSwatch(p)}
-                  className="group relative h-9 rounded-xl shadow focus:outline-none focus:ring-2 focus:ring-zinc-600"
+                  className="group  relative h-9 rounded-xl shadow focus:outline-none focus:ring-2 focus:ring-zinc-600"
                   style={{ background: p }}
                   title={p}
                 >

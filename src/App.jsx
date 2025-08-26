@@ -346,7 +346,7 @@ export default function UltimateRGBApp() {
             {/* Removed spinning square */}
             <div>
               <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Ultimate RGB</h1>
-              <p className="text-xs md:text-sm text-zinc-400">Выбор цвета</p>
+              <p className="text-xs md:text-sm text-zinc-400">Получение HEX-кода из палитры</p>
             </div>
           </motion.div>
 

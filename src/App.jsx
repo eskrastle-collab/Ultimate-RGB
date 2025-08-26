@@ -1,81 +1,60 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Check, Copy, Plus, Droplet, Palette, ArrowUpRight } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { motion } from "framer-motion";
+import { Copy, Check, Droplets, Plus, Trash2, Newspaper } from "lucide-react";
 
-// ---- Document head: title, meta, icons (as early as possible) ----
-if (typeof document !== "undefined") {
-  try {
-    document.title = "Ultimate RGB";
-
-    const ensure = (selector, create) => {
-      let el = document.querySelector(selector);
-      if (!el) { el = create(); document.head.appendChild(el); }
-      return el;
-    };
-
-    // Description
-    const metaDesc = ensure('meta[name="description"]', () => {
-      const m = document.createElement('meta');
-      m.setAttribute('name', 'description');
-      return m;
-    });
-    metaDesc.setAttribute('content', 'Ultimate RGB — онлайн-подбор цветов с HEX, RGBA, прозрачностью (Alpha), оттенками и личной палитрой.');
-
-    // Open Graph / Twitter
-    const setProp = (prop, content) => {
-      const el = ensure(`meta[property="${prop}"]`, () => { const m = document.createElement('meta'); m.setAttribute('property', prop); return m; });
-      el.setAttribute('content', content);
-    };
-    const setName = (name, content) => {
-      const el = ensure(`meta[name="${name}"]`, () => { const m = document.createElement('meta'); m.setAttribute('name', name); return m; });
-      el.setAttribute('content', content);
-    };
-
-    setProp('og:title', 'Ultimate RGB');
-    setProp('og:description', 'Онлайн-подбор цветов с HEX, RGBA и Alpha.');
-    setName('twitter:card', 'summary');
-    setName('twitter:title', 'Ultimate RGB');
-    setName('twitter:description', 'Онлайн-подбор цветов с HEX, RGBA и Alpha.');
-
-    // Small inline SVG logo as data URL for icons / previews
-    const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop stop-color='#ff316b'/><stop offset='1' stop-color='#6a00ff'/></linearGradient></defs><path d='M16 10 v26 a16 16 0 0 0 32 0 V10' fill='none' stroke='url(#g)' stroke-width='16' stroke-linecap='round'/></svg>`;
-    const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-
-    setProp('og:image', dataUrl);
-    setName('twitter:image', dataUrl);
-
-    const linkIcon = ensure('link[rel="icon"]', () => { const l = document.createElement('link'); l.setAttribute('rel','icon'); return l; });
-    linkIcon.setAttribute('href', dataUrl);
-
-    const appleIcon = ensure('link[rel="apple-touch-icon"]', () => { const l = document.createElement('link'); l.setAttribute('rel','apple-touch-icon'); return l; });
-    appleIcon.setAttribute('href', dataUrl);
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.error(e);
-  }
+// --- Utilities ---
+function clamp(n, min, max) {
+  return Math.min(Math.max(n, min), max);
 }
 
-// ---------- Цветовые утилиты ----------
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
-
 function hsvToRgb(h, s, v) {
-  s = clamp(s, 0, 1);
-  v = clamp(v, 0, 1);
+  // h in [0,360), s,v in [0,1]
   const c = v * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = v - c;
-  let r1, g1, b1;
-  if (h >= 0 && h < 60) [r1, g1, b1] = [c, x, 0];
-  else if (h >= 60 && h < 120) [r1, g1, b1] = [x, c, 0];
-  else if (h >= 120 && h < 180) [r1, g1, b1] = [0, c, x];
-  else if (h >= 180 && h < 240) [r1, g1, b1] = [0, x, c];
-  else if (h >= 240 && h < 300) [r1, g1, b1] = [x, 0, c];
+  let r1 = 0, g1 = 0, b1 = 0;
+  if (0 <= h && h < 60) [r1, g1, b1] = [c, x, 0];
+  else if (60 <= h && h < 120) [r1, g1, b1] = [x, c, 0];
+  else if (120 <= h && h < 180) [r1, g1, b1] = [0, c, x];
+  else if (180 <= h && h < 240) [r1, g1, b1] = [0, x, c];
+  else if (240 <= h && h < 300) [r1, g1, b1] = [x, 0, c];
   else [r1, g1, b1] = [c, 0, x];
   return {
     r: Math.round((r1 + m) * 255),
     g: Math.round((g1 + m) * 255),
     b: Math.round((b1 + m) * 255),
   };
+}
+
+function rgbToHex(r, g, b) {
+  return (
+    "#" + [r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")
+  ).toUpperCase();
+}
+
+function rgbaToHex(r, g, b, a = 1) {
+  const aa = Math.round(clamp(a, 0, 1) * 255);
+  return (
+    "#" + [r, g, b, aa].map((n) => n.toString(16).padStart(2, "0")).join("")
+  ).toUpperCase();
+}
+
+function hexToRgba(hex) {
+  const m = hex.replace(/#/g, "").trim();
+  if (![3, 4, 6, 8].includes(m.length)) return null;
+  const norm = (len) =>
+    len === 3 || len === 4
+      ? m.split("").map((c) => c + c).join("")
+      : m;
+  const s = norm(m.length);
+  const hasAlpha = s.length === 8;
+  const n = parseInt(s, 16);
+  if (Number.isNaN(n)) return null;
+  const r = (n >> (hasAlpha ? 24 : 16)) & 255;
+  const g = (n >> (hasAlpha ? 16 : 8)) & 255;
+  const b = (n >> (hasAlpha ? 8 : 0)) & 255;
+  const a = hasAlpha ? (n & 255) / 255 : 1;
+  return { r, g, b, a };
 }
 
 function rgbToHsv(r, g, b) {
@@ -85,583 +64,411 @@ function rgbToHsv(r, g, b) {
   let h = 0;
   if (d === 0) h = 0;
   else if (max === r) h = 60 * (((g - b) / d) % 6);
-  else if (max === g) h = 60 * (((b - r) / d) + 2);
-  else h = 60 * (((r - g) / d) + 4);
+  else if (max === g) h = 60 * ((b - r) / d + 2);
+  else h = 60 * ((r - g) / d + 4);
   if (h < 0) h += 360;
   const s = max === 0 ? 0 : d / max;
   const v = max;
   return { h, s, v };
 }
 
-function rgbToHex(r, g, b) {
-  return [r, g, b]
-    .map((x) => x.toString(16).padStart(2, "0"))
-    .join("")
-    .toUpperCase();
+function lightenDarkenHex(hex, amount) {
+  const rgb = hexToRgba(hex);
+  if (!rgb) return hex;
+  const adjust = (n) => clamp(n + amount, 0, 255);
+  return rgbToHex(adjust(rgb.r), adjust(rgb.g), adjust(rgb.b));
 }
 
-function hexToRgba(hex) {
-  if (!hex) return null;
-  let h = hex.trim().replace(/^#/, "");
-  if (h.length === 3) {
-    h = h.split("").map((c) => c + c).join("");
-  }
-  if (h.length === 6) h = h + "FF"; // непрозрачный по умолчанию
-  if (h.length !== 8) return null;
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  const a = parseInt(h.slice(6, 8), 16) / 255;
-  return { r, g, b, a };
-}
-
-function rgbaToCss({ r, g, b, a }) {
-  return `rgba(${r}, ${g}, ${b}, ${clamp(a, 0, 1).toFixed(3)})`;
-}
-
-function withAlphaToHex8(r, g, b, a) {
-  const rgb = rgbToHex(r, g, b);
-  const alpha = Math.round(clamp(a, 0, 1) * 255)
-    .toString(16)
-    .padStart(2, "0")
-    .toUpperCase();
-  return rgb + alpha;
-}
-
-// Карточка с шахматной подложкой для прозрачности
-function Checkerboard({ className = "", children, dark = false }) {
-  const tile = dark ? "#2c2c2c" : "#e5e7eb";
-  const style = {
-    background:
-      "conic-gradient(" + tile + " 25%,transparent 0 50%," + tile + " 0 75%,transparent 0) 0 0/16px 16px",
-  };
-  return (
-    <div className={"rounded-2xl " + className} style={style}>
-      {children}
-    </div>
-  );
-}
-
-
-// Оdometer-анимация для меняющихся строк/чисел (медленнее)
-function OdometerText({ value, className = "", duration = 0.5 }) {
-  const text = String(value);
-  const chars = text.split("");
-  return (
-    <span className={`font-mono tracking-wider inline-flex ${className}`}>
-      {chars.map((ch, i) => (
-        <span key={i} className="relative inline-block overflow-hidden w-[1ch] h-[1em] align-baseline">
-          <AnimatePresence mode="popLayout" initial={false}>
-            <motion.span
-              key={`${i}-${ch}`}
-              initial={{ y: "1em", opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: "-1em", opacity: 0 }}
-              transition={{ duration, ease: "easeOut" }}
-              className="absolute inset-0 leading-none"
-            >
-              {ch}
-            </motion.span>
-          </AnimatePresence>
-        </span>
-      ))}
-    </span>
-  );
-}
-
-// Фоновая анимация — «Aurora» на основе текущего цвета
-function BackgroundFX({ h, s, v, a }) {
-  // Надёжная версия: частицы-орбиты на чистом CSS (без зависимостей от runtime)
-  // Три кольца, цвета завязаны на текущий Hue
-  const colA = `hsla(${h}, 85%, 60%, 0.24)`;
-  const colB = `hsla(${(h + 60) % 360}, 80%, 58%, 0.20)`;
-  const colC = `hsla(${(h + 300) % 360}, 72%, 55%, 0.18)`;
-
-  const rings = [
-    { count: 18, radius: '18vmax', color: colA, dur: '80s', reverse: false, sizeBase: 9 },
-    { count: 24, radius: '28vmax', color: colB, dur: '110s', reverse: true,  sizeBase: 8 },
-    { count: 30, radius: '38vmax', color: colC, dur: '140s', reverse: false, sizeBase: 7 },
-  ];
-
-  return (
-    <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden">
-      {/* Встраиваем keyframes один раз */}
-      <style>{`
-        @keyframes orbit360 { to { transform: rotate(360deg); } }
-        .orbital-ring { position:absolute; will-change: transform; }
-        .orbital-anim { animation: orbit360 var(--dur) linear infinite; }
-        .orbital-anim.reverse { animation-direction: reverse; }
-      `}</style>
-
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-        {rings.map((ring, ri) => (
-          <div
-            key={ri}
-            className={`orbital-ring orbital-anim ${ring.reverse ? 'reverse' : ''}`}
-            style={{ ['--dur']: ring.dur }}
-          >
-            {Array.from({ length: ring.count }).map((_, i) => {
-              const angle = (360 / ring.count) * i;
-              const size = ring.sizeBase + (i % 6);
-              return (
-                <span
-                  key={i}
-                  className="absolute rounded-full"
-                  style={{
-                    top: 0,
-                    left: 0,
-                    transform: `rotate(${angle}deg) translateX(${ring.radius})`,
-                    width: size,
-                    height: size,
-                    background: `radial-gradient(circle at 50% 50%, ${ring.color} 0%, transparent 70%)`,
-                    filter: 'drop-shadow(0 0 6px rgba(255,255,255,0.12))',
-                  }}
-                />
-              );
-            })}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ---------- Основной компонент ----------
-export default function UltimateRGB() {
-  // Только тёмная тема
-  useEffect(() => {
-    if (typeof document !== "undefined") {
-      document.documentElement.classList.add("dark");
-    }
-  }, []);
-  const isDark = true;
-
-  // HSV + A — базовая модель состояния
-  const [h, setH] = useState(210); // 0..360
-  const [s, setS] = useState(0.6); // 0..1
-  const [v, setV] = useState(0.8); // 0..1
-  const [a, setA] = useState(1); // 0..1
-
-  const [hexInput, setHexInput] = useState("");
-  const [hexError, setHexError] = useState("");
-  const [hexFocused, setHexFocused] = useState(false);
-
-  const [copied, setCopied] = useState(""); // "hex" | "rgba" | "cssvar" | "error"
-  const [palette, setPalette] = useState(() => {
-    try {
-      const saved = localStorage.getItem("ultimatergb_palette");
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [
-      "#FF6B6B",
-      "#FFD166",
-      "#06D6A0",
-      "#118AB2",
-      "#8A5CF6",
-      "#F72585",
-      "#3A0CA3",
-      "#4CC9F0",
-      "#2A9D8F",
-      "#E76F51",
-    ];
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("ultimatergb_palette", JSON.stringify(palette));
-    } catch {}
-  }, [palette]);
-
-  const rgb = useMemo(() => hsvToRgb(h, s, v), [h, s, v]);
-  const rgba = useMemo(() => ({ ...rgb, a }), [rgb, a]);
-  const css = useMemo(() => rgbaToCss(rgba), [rgba]);
-  const hex6 = useMemo(() => rgbToHex(rgb.r, rgb.g, rgb.b), [rgb]);
-  const hex8 = useMemo(() => withAlphaToHex8(rgb.r, rgb.g, rgb.b, a), [rgb, a]);
-
-  // синхронизируем поле HEX при изменении цвета (если пользователь не редактирует)
-  useEffect(() => {
-    if (!hexFocused) {
-      setHexInput("#" + hex8);
-      setHexError("");
-    }
-  }, [hex8, hexFocused]);
-
-  // обработка вставки HEX
-  function onHexChange(val) {
-    setHexInput(val);
-    const rgbaParsed = hexToRgba(val);
-    if (!rgbaParsed) {
-      setHexError("Неверный HEX (используйте #RRGGBB или #RRGGBBAA)");
-      return;
-    }
-    setHexError("");
-    const { r, g, b, a: aa } = rgbaParsed;
-    const { h: hh, s: ss, v: vv } = rgbToHsv(r, g, b);
-    setH(hh);
-    setS(ss);
-    setV(vv);
-    setA(aa);
-  }
-
-  // Копирование в буфер (надёжный вариант + fallback)
-  async function copy(text, type) {
-    let ok = false;
-    try {
-      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-        await navigator.clipboard.writeText(text);
-        ok = true;
-      } else {
-        throw new Error("clipboard api unavailable");
-      }
-    } catch (e1) {
+function useCopyToClipboard(text) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(async () => {
+    const fallback = async (t) => {
       try {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "fixed";
-        ta.style.top = "-1000px";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        const res = document.execCommand("copy");
-        document.body.removeChild(ta);
-        ok = !!res;
-      } catch (e2) {
-        ok = false;
+        const el = document.createElement("textarea");
+        el.value = t;
+        el.setAttribute("readonly", "");
+        el.style.position = "absolute";
+        el.style.left = "-9999px";
+        document.body.appendChild(el);
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      } else {
+        const ok = await fallback(text);
+        if (ok) {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        }
+      }
+    } catch {
+      const ok = await fallback(text);
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
       }
     }
-    setCopied(ok ? type : "error");
-    setTimeout(() => setCopied(""), 1400);
-  }
+  }, [text]);
+  return { copied, copy };
+}
 
-  // ---------- UI-хелперы ----------
-  const svRef = useRef(null);
-  const hueRef = useRef(null);
-  const alphaRef = useRef(null);
+// --- Components ---
+function HueSlider({ h, onChange }) {
+  const ref = useRef(null);
+  const handle = useCallback((clientY) => {
+    const rect = ref.current.getBoundingClientRect();
+    const y = clamp(clientY - rect.top, 0, rect.height);
+    const hue = (y / rect.height) * 360;
+    onChange(hue);
+  }, [onChange]);
 
-  function handlePointer(containerRef, e, onUpdate) {
-    const el = containerRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-    const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
-    onUpdate(x, y);
-  }
-
-  // Перетаскивание по SV-полю
-  function onSvPointerDown(e) {
+  const onPointerDown = (e) => {
     e.preventDefault();
-    handlePointer(svRef, e, (x, y) => {
-      setS(x);
-      setV(1 - y);
-    });
-    const move = (ev) => handlePointer(svRef, ev, (x, y) => {
-      setS(x);
-      setV(1 - y);
-    });
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  }
-
-  function onHuePointerDown(e) {
-    e.preventDefault();
-    handlePointer(hueRef, e, (x) => setH(Math.round(x * 360)));
-    const move = (ev) => handlePointer(hueRef, ev, (x) => setH(Math.round(x * 360)));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  }
-
-  function onAlphaPointerDown(e) {
-    e.preventDefault();
-    handlePointer(alphaRef, e, (x) => setA(x));
-    const move = (ev) => handlePointer(alphaRef, ev, (x) => setA(x));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  }
-
-  const hueGradient = {
-    background:
-      "linear-gradient(to right, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%)",
+    e.currentTarget.setPointerCapture(e.pointerId);
+    handle(e.clientY);
   };
-
-  const alphaGradient = {
-    background: `linear-gradient(to right, rgba(${rgb.r},${rgb.g},${rgb.b},0) 0%, rgba(${rgb.r},${rgb.g},${rgb.b},1) 100%)`,
+  const onPointerMove = (e) => {
+    if (e.buttons !== 1) return;
+    handle(e.clientY);
   };
-
-  const svBg = {
-    background: `hsl(${h} 100% 50%)`,
-  };
-
-  const svPointer = {
-    left: `${s * 100}%`,
-    top: `${(1 - v) * 100}%`,
-  };
-
-  const huePointer = {
-    left: `${(h / 360) * 100}%`,
-  };
-
-  const alphaPointer = {
-    left: `${a * 100}%`,
-  };
-
-  function addToPalette() {
-    const value = "#" + hex8;
-    if (palette.includes(value)) return;
-    setPalette([value, ...palette].slice(0, 18));
-  }
-
-  function useSwatch(hex) {
-    const rgbaParsed = hexToRgba(hex);
-    if (!rgbaParsed) return;
-    const { r, g, b, a: aa } = rgbaParsed;
-    const { h: hh, s: ss, v: vv } = rgbToHsv(r, g, b);
-    setH(hh);
-    setS(ss);
-    setV(vv);
-    setA(aa);
-  }
-
-  const shades = useMemo(() => {
-    // 5 осветлений и 5 затемнений от базового
-    const list = [];
-    for (let i = 4; i >= 1; i--) list.push({ t: `${i * 10}%`, c: hsvToRgb(h, s, clamp(v + (1 - v) * (i / 6), 0, 1)) });
-    list.push({ t: "База", c: rgb });
-    for (let i = 1; i <= 4; i++) list.push({ t: `${i * 10}%−`, c: hsvToRgb(h, s, clamp(v * (1 - i / 6), 0, 1)) });
-    return list;
-  }, [h, s, v]);
 
   return (
-    <div className={"relative dark min-h-screen w-full bg-[#232323] text-zinc-100 selection:bg-zinc-100 selection:text-zinc-900"}>
-      <BackgroundFX h={h} s={s} v={v} a={a} />
-      {/* Шапка */}
-      <motion.header className="relative z-30 sticky top-0 backdrop-blur border-b border-zinc-800/60 bg-[#232323]/80"
-      >
-        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">              <h1 className="text-xl font-semibold tracking-tight">Ultimate RGB</h1>
-              <span className="text-zinc-400 hidden sm:inline">— HEX + Прозрачность</span>
+    <div className="relative h-72 w-5 rounded-xl overflow-hidden shadow-inner" ref={ref}
+         onPointerDown={onPointerDown} onPointerMove={onPointerMove}
+         aria-label="Hue slider" role="slider" aria-valuemin={0} aria-valuemax={360} aria-valuenow={Math.round(h)}>
+      {/* Hue gradient */}
+      <div className="absolute inset-0" style={{
+        background: `linear-gradient(to bottom, 
+          #ff0000 0%, #ffff00 17%, #00ff00 33%, #00ffff 50%, #0000ff 67%, #ff00ff 83%, #ff0000 100%)`
+      }} />
+      {/* Thumb */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 w-7 h-2 rounded-full ring-2 ring-white/90 shadow-lg"
+        style={{ top: `${(h / 360) * 100}%`, backgroundColor: `hsl(${h}, 100%, 50%)` }}
+      />
+    </div>
+  );
+}
+
+function SVPanel({ h, s, v, onChange }) {
+  const ref = useRef(null);
+  const handle = useCallback((clientX, clientY) => {
+    const rect = ref.current.getBoundingClientRect();
+    const x = clamp(clientX - rect.left, 0, rect.width);
+    const y = clamp(clientY - rect.top, 0, rect.height);
+    const ns = x / rect.width;
+    const nv = 1 - y / rect.height;
+    onChange({ s: ns, v: nv });
+  }, [onChange]);
+
+  const onPointerDown = (e) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    handle(e.clientX, e.clientY);
+  };
+  const onPointerMove = (e) => {
+    if (e.buttons !== 1) return;
+    handle(e.clientX, e.clientY);
+  };
+
+  const { r, g, b } = hsvToRgb(h, 1, 1);
+  const base = `rgb(${r},${g},${b})`;
+  const x = s * 100;
+  const y = (1 - v) * 100;
+
+  return (
+    <div className="relative w-full h-72 rounded-2xl overflow-hidden cursor-crosshair shadow-inner" ref={ref}
+         onPointerDown={onPointerDown} onPointerMove={onPointerMove} aria-label="Saturation/Value panel">
+      <div className="absolute inset-0" style={{ background: `linear-gradient(to right, #fff, ${base})` }} />
+      <div className="absolute inset-0" style={{ background: `linear-gradient(to top, #000, transparent)` }} />
+      {/* Thumb */}
+      <div className="absolute w-5 h-5 rounded-full border-2 border-white shadow-[0_0_0_2px_rgba(0,0,0,0.3)]"
+           style={{ left: `calc(${x}% - 10px)`, top: `calc(${y}% - 10px)` }} />
+    </div>
+  );
+}
+
+function FancyGlow({ className = "" }) {
+  return (
+    <div className={`pointer-events-none absolute inset-0 blur-2xl opacity-60 ${className}`}
+         style={{
+           background:
+             "radial-gradient(600px 200px at 20% 10%, rgba(99,102,241,0.35), transparent 60%)," +
+             "radial-gradient(500px 200px at 80% 10%, rgba(236,72,153,0.35), transparent 60%)," +
+             "radial-gradient(500px 200px at 50% 100%, rgba(34,197,94,0.3), transparent 60%)",
+         }} />
+  );
+}
+
+export default function UltimateRGBApp() {
+  // HSV + Alpha state
+  const [hsv, setHsv] = useState({ h: 210, s: 0.6, v: 0.8 });
+  const [alpha, setAlpha] = useState(1);
+  const { h, s, v } = hsv;
+  const { r, g, b } = useMemo(() => hsvToRgb(h, s, v), [h, s, v]);
+  const hex6 = useMemo(() => rgbToHex(r, g, b), [r, g, b]);
+  const hex8 = useMemo(() => rgbaToHex(r, g, b, alpha), [r, g, b, alpha]);
+  const displayHex = alpha < 1 ? hex8 : hex6;
+  const { copied, copy } = useCopyToClipboard(displayHex);
+
+  const [hexInput, setHexInput] = useState(displayHex);
+  useEffect(() => setHexInput(displayHex), [displayHex]);
+
+  const onHexChange = (val) => {
+    setHexInput(val.toUpperCase());
+    const rgba = hexToRgba(val);
+    if (rgba) {
+      const next = rgbToHsv(rgba.r, rgba.g, rgba.b);
+      setHsv(next);
+      setAlpha(rgba.a);
+    }
+  };
+
+  // Palette (favorites)
+  const [swatches, setSwatches] = useState(["#7C3AED", "#22C55E", "#F59E0B", "#EF4444"]);
+
+  const addSwatch = () => {
+    setSwatches((prev) => (prev.includes(hex6) ? prev : [hex6, ...prev]).slice(0, 12));
+  };
+  const removeSwatch = (c) => setSwatches((prev) => prev.filter((x) => x !== c));
+
+  const variants = {
+    container: { opacity: 0, y: 16 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: "easeOut" } },
+  };
+
+  // For alpha slider background
+  const alphaGradient = `linear-gradient(90deg, rgba(${r},${g},${b},0) 0%, rgba(${r},${g},${b},1) 100%)`;
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-50 relative overflow-hidden">
+      <FancyGlow />
+      {/* Header */}
+      <header className="relative z-20">
+        <div className="mx-auto max-w-6xl px-4 py-6 flex items-center justify-between">
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6 }}
+            className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-emerald-500 shadow-lg animate-spin-slow" />
+            <div>
+              <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">Ultimate RGB</h1>
+              <p className="text-xs md:text-sm text-zinc-400">Выбор цвета</p>
             </div>
-          </div>
+          </motion.div>
+
+          {/* Redesigned news button (top-right) */}
           <a
             href="https://t.me/StocksiUltimate_bot?start=r61558uUltimateRGB"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs sm:text-sm text-zinc-300 hover:underline inline-flex items-center gap-1"
-          >
-            Сервис моментальных новостей <ArrowUpRight className="h-3.5 w-3.5" />
+            target="_blank" rel="noreferrer"
+            className="relative group select-none">
+            <span className="sr-only">Сервис оперативных новостей STOCKSI Ultimate</span>
+
+            {/* Animated conic aura */}
+            <div className="absolute -inset-[2px] rounded-full opacity-60 blur-md pointer-events-none"
+                 style={{
+                   background: "conic-gradient(from 0deg, rgba(167,139,250,.5), rgba(99,102,241,.5), rgba(16,185,129,.5), rgba(236,72,153,.5), rgba(167,139,250,.5))"
+                 }} />
+
+            <motion.div
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.99 }}
+              className="relative px-4 py-2 rounded-full text-xs md:text-sm font-semibold bg-zinc-900/70 backdrop-blur border border-white/10 shadow-[0_4px_24px_rgba(0,0,0,0.25)] overflow-hidden">
+              <span className="inline-flex items-center gap-2">
+                <Newspaper className="h-4 w-4" />
+                Сервис оперативных новостей STOCKSI Ultimate
+              </span>
+              {/* Shimmer sweep */}
+              <span className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
+                <i className="absolute -left-1/3 top-0 h-full w-1/3" style={{
+                  background: "linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent)",
+                  transform: "skewX(-20deg)"
+                }} />
+              </span>
+              {/* Pulse dot */}
+              <span className="absolute right-1 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_12px_2px_rgba(16,185,129,0.8)] animate-pulse" />
+            </motion.div>
           </a>
         </div>
-      </motion.header>
+      </header>
 
-      {/* Контент */}
-      <main className="relative z-10 mx-auto max-w-6xl px-4 py-6 grid gap-6 lg:grid-cols-[1.2fr_1fr]">
-        {/* Левая колонка: выбор цвета */}
-        <motion.section initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-          <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)]">
-            {/* SV-поле */}
-            <div className="space-y-3">
-              <div className="text-sm font-medium text-zinc-300">Палитра (насыщенность × яркость)</div>
-              <div
-                ref={svRef}
-                onPointerDown={onSvPointerDown}
-                className="relative h-72 w-full rounded-2xl overflow-hidden cursor-crosshair shadow-sm"
-                style={svBg}
-              >
-                <div className="absolute inset-0" style={{ background: "linear-gradient(to right, #fff, rgba(255,255,255,0))" }} />
-                <div className="absolute inset-0" style={{ background: "linear-gradient(to top, #000, rgba(0,0,0,0))" }} />
-                <div className="absolute h-5 w-5 -ml-2.5 -mt-2.5 rounded-full ring-2 ring-white shadow-md" style={{ ...svPointer, background: css }} />
+      {/* Main */}
+      <main className="relative z-10">
+        <motion.section
+          initial="container"
+          animate="visible"
+          variants={variants}
+          className="mx-auto max-w-6xl px-4 pb-24"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+            {/* Picker Card */}
+            <div className="lg:col-span-2 relative">
+              <div className="relative rounded-3xl p-6 bg-zinc-900/60 backdrop-blur border border-white/10 shadow-xl overflow-hidden">
+                <div className="absolute -inset-px rounded-3xl bg-gradient-to-tr from-white/10 to-transparent pointer-events-none" />
+
+                <div className="flex flex-col md:flex-row gap-6">
+                  <div className="flex-1">
+                    <SVPanel h={h} s={s} v={v} onChange={(nv) => setHsv((p) => ({ ...p, ...nv }))} />
+                  </div>
+                  <div className="w-8 md:w-12 flex items-center justify-center">
+                    <HueSlider h={h} onChange={(nh) => setHsv((p) => ({ ...p, h: nh }))} />
+                  </div>
+                </div>
+
+                {/* Readouts */}
+                <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="relative h-12 w-12 rounded-xl border border-white/10 shadow-inner overflow-hidden"
+                         title="Предпросмотр c учётом альфы">
+                      <div className="absolute inset-0" style={{ background: 'repeating-conic-gradient(rgba(255,255,255,0.08) 0 25%, transparent 0 50%) 0 0 / 12px 12px' }} />
+                      <div className="absolute inset-0" style={{ backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha})` }} />
+                    </div>
+                    <div className="flex-1">
+                      <label className="text-xs text-zinc-400">HEX {alpha < 1 ? "(с альфой)" : ""}</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          className="w-40 md:w-48 bg-transparent border border-white/10 rounded-lg px-3 py-2 font-mono tracking-wider focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                          value={hexInput}
+                          onChange={(e) => onHexChange(e.target.value)}
+                          spellCheck={false}
+                        />
+                        <button
+                          onClick={copy}
+                          className="relative px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition shadow"
+                          title="Скопировать HEX"
+                        >
+                          <span className="sr-only">Copy HEX</span>
+                          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                          {copied && (
+                            <span className="absolute -top-7 left-1/2 -translate-x-1/2 text-[10px] px-2 py-1 rounded bg-zinc-800 border border-white/10">Скопировано</span>
+                          )}
+                        </button>
+                        <button
+                          onClick={addSwatch}
+                          className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition shadow"
+                          title="Добавить в палитру"
+                        >
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3 text-sm">
+                    <div>
+                      <p className="text-xs text-zinc-400">RGB</p>
+                      <p className="font-mono">{r}, {g}, {b}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-zinc-400">HSV</p>
+                      <p className="font-mono">{Math.round(h)}, {Math.round(s*100)}%, {Math.round(v*100)}%</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-zinc-400">Alpha</p>
+                      <p className="font-mono">{Math.round(alpha*100)}%</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Alpha slider */}
+                <div className="mt-4">
+                  <label className="text-xs text-zinc-400">Прозрачность</label>
+                  <div className="mt-2 flex items-center gap-3">
+                    <div className="relative flex-1 h-3 rounded-full overflow-hidden border border-white/10 bg-[length:12px_12px]" style={{ backgroundImage: 'repeating-conic-gradient(rgba(255,255,255,0.08) 0 25%, transparent 0 50%)' }}>
+                      <div className="absolute inset-0" style={{ background: alphaGradient }} />
+                      <input
+                        type="range"
+                        min={0}
+                        max={100}
+                        value={Math.round(alpha*100)}
+                        onChange={(e) => setAlpha(clamp(parseInt(e.target.value,10)/100, 0, 1))}
+                        className="absolute inset-0 w-full h-full appearance-none bg-transparent cursor-pointer"
+                        aria-label="Alpha"
+                      />
+                    </div>
+                    <input
+                      className="w-16 bg-transparent border border-white/10 rounded-lg px-2 py-1 font-mono text-sm text-right focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                      value={Math.round(alpha*100)}
+                      onChange={(e) => setAlpha(clamp(parseInt(e.target.value || '0',10)/100, 0, 1))}
+                    />
+                    <span className="text-sm text-zinc-400">%</span>
+                  </div>
+                </div>
+
+                {/* Shades & Tints */}
+                <div className="mt-6">
+                  <p className="text-xs text-zinc-400 mb-2">Оттенки и вариации</p>
+                  <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2">
+                    {[-80,-60,-40,-20, -10, 0, 10, 20, 40, 60, 80].map((amt, i) => {
+                      const c = amt === 0 ? hex6 : lightenDarkenHex(hex6, amt);
+                      return (
+                        <button key={i} onClick={() => onHexChange(c)} title={c}
+                                className="relative h-8 rounded-lg border border-white/10 shadow hover:scale-[1.03] transition"
+                                style={{ backgroundColor: c }} />
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Слайдеры H и A */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-zinc-300">Оттенок (Hue)</span>
-                  <OdometerText value={`${h}°`} className="tabular-nums text-zinc-400" />
-                </div>
-                <div
-                  className="relative h-4 rounded-full shadow-inner overflow-hidden cursor-ew-resize"
-                  ref={hueRef}
-                  onPointerDown={onHuePointerDown}
-                  style={hueGradient}
-                >
-                  <div className="absolute top-1/2 -translate-y-1/2 h-6 w-6 -ml-3 rounded-full ring-2 ring-white shadow" style={{ left: huePointer.left, background: `hsl(${h} 100% 50%)` }} />
-                </div>
+            {/* Palette Card */}
+            <div className="relative rounded-3xl p-6 bg-zinc-900/60 backdrop-blur border border-white/10 shadow-xl overflow-hidden">
+              <div className="absolute -inset-px rounded-3xl bg-gradient-to-br from-transparent to-white/5 pointer-events-none" />
+              <h3 className="text-lg font-semibold mb-4">Моя палитра</h3>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                {swatches.map((c) => (
+                  <div key={c} className="group relative">
+                    <button
+                      onClick={() => onHexChange(c)}
+                      className="h-16 w-full rounded-xl border border-white/10 shadow-inner hover:scale-[1.02] transition"
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                    <div className="absolute bottom-1 left-1 right-1 flex items-center justify-between text-[10px] font-mono tracking-tighter">
+                      <span className="px-1.5 py-0.5 rounded bg-black/40 backdrop-blur border border-white/10">{c}</span>
+                      <button onClick={() => removeSwatch(c)} className="opacity-0 group-hover:opacity-100 transition p-1 rounded bg-black/40 border border-white/10">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-zinc-300">Прозрачность (Alpha)</span>
-                  <OdometerText value={`${Math.round(a * 100)}%`} className="tabular-nums text-zinc-400" />
-                </div>
-                <Checkerboard dark={isDark} className="relative h-4 rounded-full overflow-hidden cursor-ew-resize shadow-inner">
-                  <div ref={alphaRef} onPointerDown={onAlphaPointerDown} className="absolute inset-0" style={alphaGradient} />
-                  <div className="absolute top-1/2 -translate-y-1/2 h-6 w-6 -ml-3 rounded-full ring-2 ring-white shadow" style={{ left: alphaPointer.left, background: css }} />
-                </Checkerboard>
-              </div>
-            </div>
-          </div>
 
-          {/* Быстрые оттенки */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
-              <Droplet className="h-4 w-4" /> Тоны и оттенки
-            </div>
-            <div className="grid grid-cols-5 sm:grid-cols-10 gap-2">
-              {shades.map(({ t, c }, i) => {
-                const hex = "#" + rgbToHex(c.r, c.g, c.b);
-                return (
-                  <button
-                    key={i}
-                    className="group relative h-8 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-zinc-600"
-                    style={{ background: hex }}
-                    onClick={() => useSwatch(hex)}
-                    title={t}
-                  >
-                    <span className="sr-only">{t}</span>
-                    <span className="absolute inset-x-0 -bottom-6 text-[10px] text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                      {t}
-                    </span>
-                  </button>
-                );
-              })}
+              <div className="mt-6 text-xs text-zinc-400">
+                Нажмите на цвет, чтобы выбрать его в палитре.
+              </div>
             </div>
           </div>
         </motion.section>
-
-        {/* Правая колонка: предпросмотр и коды */}
-        <motion.aside initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-          {/* Предпросмотр */}
-          <div className="grid gap-4">
-            <div className="text-sm font-medium text-zinc-300">Предпросмотр</div>
-            <div className="grid grid-cols-2 gap-4">
-              <Checkerboard dark={isDark} className="h-28 w-full p-2">
-                <div className="h-full w-full rounded-xl shadow-inner" style={{ background: css }} />
-              </Checkerboard>
-              <div className="h-28 w-full rounded-2xl shadow-inner" style={{ background: `linear-gradient(135deg, ${css}, ${css} 60%, rgba(0,0,0,0.05) 60%, rgba(0,0,0,0.05) 61%, transparent 61%)` }} />
-            </div>
-          </div>
-
-          {/* Поля кода */}
-          <div className="space-y-4">
-            <label className="block">
-              <span className="text-sm font-medium text-zinc-300">HEX</span>
-              <motion.div
-                key={hex8}
-                initial={{ scale: 0.995 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                className="mt-1 flex items-center rounded-xl border border-zinc-800 bg-[#1f1f1f] focus-within:ring-2 focus-within:ring-zinc-600"
-              >
-                <input
-                  value={hexInput}
-                  onChange={(e) => onHexChange(e.target.value)}
-                  onFocus={() => setHexFocused(true)}
-                  onBlur={() => setHexFocused(false)}
-                  className={`w-full rounded-xl bg-transparent px-3 py-2 outline-none font-mono text-sm tracking-wider ${hexError ? "text-rose-600" : ""}`}
-                  placeholder="#RRGGBB или #RRGGBBAA"
-                />
-                <button
-                  onClick={() => copy("#" + hex8, "hex")}
-                  className="px-3 py-2 text-zinc-300 hover:text-white transition-colors"
-                  title="Скопировать HEX (8 знаков)"
-                >
-                  {copied === "hex" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                </button>
-              </motion.div>
-              {hexError && <div className="mt-1 text-xs text-rose-600">{hexError}</div>}
-            </label>
-
-            <div className="grid grid-cols-1 gap-3">
-              <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-[#1f1f1f] px-3 py-2">
-                <OdometerText value={`rgba(${rgba.r}, ${rgba.g}, ${rgba.b}, ${a.toFixed(3)})`} className="font-mono text-sm" />
-                <button onClick={() => copy(css, "rgba")} className="text-zinc-300 hover:text-white" title="Скопировать RGBA">
-                  {copied === "rgba" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                </button>
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-zinc-800 bg-[#1f1f1f] px-3 py-2">
-                <OdometerText value={`--color: #${hex6}; --alpha: ${Math.round(a * 100)}%;`} className="font-mono text-sm" />
-                <button onClick={() => copy(`--color: #${hex6}; --alpha: ${Math.round(a * 100)}%;`, "cssvar")} className="text-zinc-300 hover:text-white" title="Скопировать CSS-переменные">
-                  {copied === "cssvar" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Палитра */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-medium text-zinc-300">
-                <Palette className="h-4 w-4" /> Моя палитра
-              </div>
-              <button onClick={addToPalette} className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 text-white px-3 py-2 text-sm hover:brightness-110 active:scale-[.99] transition-all shadow">
-                <Plus className="h-4 w-4" /> Добавить
-              </button>
-            </div>
-            <div className="grid grid-cols-6 sm:grid-cols-9 gap-2">
-              {palette.map((p, i) => (
-                <button
-                  key={i}
-                  onClick={() => useSwatch(p)}
-                  className="group relative h-9 rounded-xl shadow focus:outline-none focus:ring-2 focus:ring-zinc-600"
-                  style={{ background: p }}
-                  title={p}
-                >
-                  <span className="absolute inset-0 rounded-xl ring-1 ring-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* footer заметка */}
-          <div className="text-xs text-zinc-400">
-            Поддерживаются HEX форматы: <code className="font-mono">#RGB</code>, <code className="font-mono">#RRGGBB</code>, <code className="font-mono">#RRGGBBAA</code>. Точность alpha — до тысячных.
-          </div>
-          
-        </motion.aside>
       </main>
 
-      <AnimatePresence>
-        {copied && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-zinc-900 text-white px-4 py-2 shadow-lg"
-          >
-            {copied === "error" ? "Не удалось скопировать" : "Скопировано!"}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <footer className="relative z-10 mx-auto max-w-6xl px-4 pb-8 pt-2 text-center text-xs text-zinc-400">
-        © {new Date().getFullYear()} Ultimate RGB
+      {/* Footer */}
+      <footer className="relative z-10 border-t border-white/10 bg-zinc-950/60 backdrop-blur">
+        <div className="mx-auto max-w-6xl px-4 py-6 flex flex-col md:flex-row items-center justify-between gap-3">
+          <p className="text-xs text-zinc-400">© {new Date().getFullYear()} Ultimate RGB — Создано с любовью к цвету.</p>
+          <div className="text-xs text-zinc-500">
+            Подсказка: кликайте по градиенту, двигайте ползунок оттенка и прозрачности.
+          </div>
+        </div>
       </footer>
+
+      {/* Styles */}
+      <style>{`
+        @keyframes glowPulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+        .animate-glow { animation: glowPulse 2.4s ease-in-out infinite; }
+        @keyframes spin-slow { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+        .animate-spin-slow { animation: spin-slow 12s linear infinite; }
+        @keyframes spin-slower { from{transform:rotate(0)} to{transform:rotate(360deg)} }
+        @keyframes shimmer { 0% { transform: translateX(-120%) skewX(-20deg); } 100% { transform: translateX(220%) skewX(-20deg); } }
+      `}</style>
     </div>
   );
-}
-
-// --- lightweight runtime tests (dev only) ---
-if (typeof window !== "undefined" && !window.__ultimate_rgb_tests) {
-  window.__ultimate_rgb_tests = true;
-  console.assert(rgbToHex(255, 0, 0) === "FF0000", "rgbToHex red");
-  console.assert(rgbToHex(0, 255, 0) === "00FF00", "rgbToHex green");
-  console.assert(rgbToHex(0, 0, 255) === "0000FF", "rgbToHex blue");
-  const p = hexToRgba("#00000080");
-  console.assert(p && Math.abs(p.a - 0.5) < 0.02, "hexToRgba alpha ~0.5");
-  console.assert(withAlphaToHex8(0, 0, 0, 0.5).endsWith("80"), "alpha to hex8 0.5 => 0x80");
 }
